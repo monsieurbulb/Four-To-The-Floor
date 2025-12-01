@@ -1,15 +1,70 @@
+
 import React, { useState, useEffect } from 'react';
 import { VideoPlayer } from './components/VideoPlayer';
 import { Profile } from './components/Profile';
 import { AuthModal } from './components/AuthModal';
 import { Chat } from './components/Chat';
-import { User } from './types';
-import { User as UserIcon, LogOut, Radio, Twitter, Facebook, Copy, X, Leaf } from 'lucide-react';
+import { AdminPanel } from './components/AdminPanel';
+import { AdminControls } from './components/AdminControls';
+import { Shop } from './components/Shop';
+import { Walkthrough } from './components/Walkthrough';
+import { HelpAgent } from './components/HelpAgent';
+import { User, FeedItem, Product } from './types';
+import { User as UserIcon, LogOut, Radio, Twitter, Facebook, Copy, Leaf } from 'lucide-react';
+import { ASSETS } from './constants';
+
+const INITIAL_FEED: FeedItem[] = [
+  {
+    id: 'f1',
+    type: 'video',
+    title: 'Series 1: The Beginning',
+    content: 'https://videos.pexels.com/video-files/5849603/5849603-hd_1920_1080_30fps.mp4',
+    date: '1998-11-04',
+    series: 'Series 1'
+  },
+  {
+    id: 'f2',
+    type: 'text',
+    title: 'Studio Update',
+    content: 'The drum pattern is the heartbeat. The bass is the root system.',
+    date: '1999-02-15',
+    series: 'Series 1'
+  },
+  {
+    id: 'f3',
+    type: 'audio',
+    title: 'Live Session #004',
+    content: 'audio-placeholder',
+    thumbnail: 'https://picsum.photos/400/100',
+    date: '2001-06-20',
+    series: 'Series 2'
+  },
+  {
+    id: 'f4',
+    type: 'image',
+    title: 'Rave Photo',
+    content: 'https://picsum.photos/600/400?random=88',
+    date: '2002-09-10',
+    series: 'Series 3'
+  },
+];
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
-  const [currentView, setCurrentView] = useState<'stream' | 'profile'>('stream');
+  const [currentView, setCurrentView] = useState<'stream' | 'profile' | 'admin' | 'shop'>('stream');
   const [showAuth, setShowAuth] = useState(true);
+  const [showWalkthrough, setShowWalkthrough] = useState(false);
+  
+  // Lifted state for Feed Items so Admin can modify it
+  const [feedItems, setFeedItems] = useState<FeedItem[]>(INITIAL_FEED);
+
+  // Background style
+  useEffect(() => {
+     document.body.style.backgroundImage = `url(${ASSETS.globalBackground})`;
+     document.body.style.backgroundSize = 'cover';
+     document.body.style.backgroundAttachment = 'fixed';
+     document.body.style.backgroundPosition = 'center';
+  }, []);
 
   // Mock checking session
   useEffect(() => {
@@ -21,13 +76,21 @@ export default function App() {
   }, []);
 
   const handleLogin = (userData: User) => {
-    const sanitizedUser = {
+    const sanitizedUser: User = {
       ...userData,
-      subscribedEventIds: userData.subscribedEventIds || []
+      subscribedEventIds: userData.subscribedEventIds || [],
+      isAdmin: userData.isAdmin || false,
+      walletAddress: userData.walletAddress || undefined,
+      points: userData.points || 0, 
+      assets: userData.assets || [], 
     };
     setUser(sanitizedUser);
     localStorage.setItem('fttf_user', JSON.stringify(sanitizedUser));
     setShowAuth(false);
+    
+    // Trigger Walkthrough for new logins (or demo purposes)
+    // In production, check a 'hasSeenTour' flag
+    setShowWalkthrough(true);
   };
 
   const handleLogout = () => {
@@ -35,11 +98,82 @@ export default function App() {
     setUser(null);
     setShowAuth(true);
     setCurrentView('stream');
+    setShowWalkthrough(false);
   };
 
   const handleUpdateUser = (updatedUser: User) => {
     setUser(updatedUser);
     localStorage.setItem('fttf_user', JSON.stringify(updatedUser));
+  };
+
+  const handleAddFeedItem = (newItem: FeedItem) => {
+    setFeedItems(prev => [newItem, ...prev]);
+  };
+
+  const handleUseAsset = (assetId: string) => {
+      if (!user || !user.assets) return;
+      
+      const updatedAssets = user.assets.map(a => {
+          if (a.id === assetId && a.quantity > 0) {
+              return { ...a, quantity: a.quantity - 1 };
+          }
+          return a;
+      });
+
+      const updatedUser = { ...user, assets: updatedAssets };
+      handleUpdateUser(updatedUser);
+  };
+
+  const handleSubscribe = () => {
+      if (!user) return;
+      const updatedUser = { ...user, points: (user.points || 0) + 50 };
+      handleUpdateUser(updatedUser);
+      alert('Subscribed! You earned 50 PTS.');
+  };
+
+  const handlePurchase = (product: Product, currency: 'cash' | 'points') => {
+      if (!user) return;
+
+      let newBalance = user.walletBalance;
+      let newPoints = user.points;
+      
+      // Deduct Cost
+      if (currency === 'cash') {
+          if (user.walletBalance < (product.priceCash || 0)) {
+              alert('Insufficient funds.');
+              return;
+          }
+          newBalance -= (product.priceCash || 0);
+      } else {
+          if (user.points < (product.pricePoints || 0)) {
+              alert('Insufficient points.');
+              return;
+          }
+          newPoints -= (product.pricePoints || 0);
+      }
+
+      // Add Assets
+      const currentAssets = user.assets || [];
+      const newAssets = [...currentAssets];
+
+      product.assets.forEach(productAsset => {
+          const existing = newAssets.find(a => a.name === productAsset.name && a.type === productAsset.type);
+          if (existing) {
+              existing.quantity += productAsset.quantity;
+          } else {
+              newAssets.push(productAsset);
+          }
+      });
+
+      const updatedUser = {
+          ...user,
+          walletBalance: newBalance,
+          points: newPoints,
+          assets: newAssets
+      };
+
+      handleUpdateUser(updatedUser);
+      alert(`Purchased ${product.name}! Items added to stash.`);
   };
 
   const shareStream = (platform: string) => {
@@ -62,6 +196,27 @@ export default function App() {
       {/* Auth Gating */}
       {showAuth && <AuthModal onLogin={handleLogin} />}
 
+      {/* Admin Controls Footer (Z-Index High) */}
+      <AdminControls 
+         user={user} 
+         onLogin={handleLogin} 
+         onOpenCMS={() => setCurrentView('admin')}
+         currentView={currentView}
+      />
+
+      {/* AI Helper "James" (Bottom Right, Stacked) */}
+      {!showAuth && user && (
+          <HelpAgent username={user.username} />
+      )}
+
+      {/* Walkthrough Tutorial Overlay */}
+      {showWalkthrough && !showAuth && (
+          <Walkthrough 
+             onClose={() => setShowWalkthrough(false)} 
+             onNavigate={(view) => setCurrentView(view as any)}
+          />
+      )}
+
       {/* Main App Navigation (Floating) */}
       {!showAuth && user && (
         <nav className="fixed top-4 left-0 right-0 z-50 px-4 md:px-8">
@@ -80,14 +235,18 @@ export default function App() {
                   className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold uppercase transition-all ${currentView === 'stream' ? 'bg-sand text-bark' : 'text-stone-400 hover:text-sand hover:bg-white/5'}`}
                 >
                   <Radio className="w-3 h-3" />
-                  <span className="hidden md:inline">Signal</span>
+                  <span className="hidden md:inline">STREAM</span>
                 </button>
                 
                 <button 
                   onClick={() => setCurrentView(currentView === 'profile' ? 'stream' : 'profile')}
                   className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold uppercase transition-all ${currentView === 'profile' ? 'bg-sand text-bark' : 'text-stone-400 hover:text-sand hover:bg-white/5'}`}
                 >
-                  <UserIcon className="w-3 h-3" />
+                  {user.profileImage ? (
+                     <img src={user.profileImage} className="w-5 h-5 rounded-full border border-white/20" />
+                  ) : (
+                     <UserIcon className="w-3 h-3" />
+                  )}
                   <span className="hidden md:inline">{user.username}</span>
                 </button>
                 
@@ -111,39 +270,42 @@ export default function App() {
         {/* Stream Layer (Always Visible in Background) */}
         <div className="animate-fadeIn p-4 md:p-8 flex flex-col items-center gap-8 w-full max-w-[1920px] mx-auto">
             
-            {/* Extended Width Video Player with Organic Curves */}
+            {/* Extended Width Video Player */}
             <div className="w-full max-w-[90vw] shadow-[0_20px_60px_rgba(0,0,0,0.4)] rounded-[40px] overflow-hidden border border-white/5 relative z-10 bg-bark">
-              <VideoPlayer />
+              <VideoPlayer 
+                user={user || undefined}
+                onUseAsset={handleUseAsset}
+                onSubscribe={handleSubscribe}
+              /> 
             </div>
             
             {/* Info & Chat Grid */}
             <div className="w-full max-w-[90vw] grid grid-cols-1 lg:grid-cols-3 gap-8 pb-20">
               
-              {/* Info Box - Glass Card */}
+              {/* Info Box */}
               <div className="lg:col-span-2 glass-panel p-8 rounded-[40px] flex flex-col md:flex-row justify-between items-start gap-8 shadow-xl relative overflow-hidden group">
-                  {/* Decorative soft blob */}
                   <div className="absolute -top-10 -right-10 w-64 h-64 bg-moss/10 rounded-full blur-[80px] pointer-events-none group-hover:bg-moss/15 transition-colors duration-1000"></div>
 
                   <div className="space-y-5 max-w-2xl relative z-10">
                     <div className="flex items-center gap-3">
                       <Leaf className="text-moss w-4 h-4" />
-                      <span className="text-moss font-mono text-xs tracking-widest uppercase">Organic Broadcast</span>
+                      <span className="text-moss font-mono text-xs tracking-widest uppercase">LIVE STREAM</span>
                     </div>
-                    <h1 className="text-4xl md:text-6xl font-bold font-mono text-sand tracking-tighter w-fit">NATURAL SELECTION</h1>
+                    <h1 className="text-4xl md:text-6xl font-bold font-mono text-sand tracking-tighter w-fit">FOUR TO THE FLOOR</h1>
                     <p className="text-stone-400 leading-relaxed text-sm md:text-base font-sans max-w-lg">
-                      Immerse yourself in the soundscape. A curated blend of organic rhythms and digital soul. 
-                      Connect with the tribe below.
+                      The definitive archive and live streaming platform for Drum and Bass culture. 
+                      Connecting the underground since 1994.
                     </p>
                     
                     <div className="flex flex-wrap gap-2 pt-2">
-                    <span className="bg-black/20 border border-white/5 px-4 py-2 rounded-full text-xs text-stone-300 font-mono hover:border-moss/30 transition-colors cursor-default">#DEEP</span>
-                    <span className="bg-black/20 border border-white/5 px-4 py-2 rounded-full text-xs text-stone-300 font-mono hover:border-moss/30 transition-colors cursor-default">#ATMOSPHERIC</span>
-                    <span className="bg-black/20 border border-white/5 px-4 py-2 rounded-full text-xs text-stone-300 font-mono hover:border-moss/30 transition-colors cursor-default">#LIQUID</span>
+                      <span className="bg-black/20 border border-white/5 px-4 py-2 rounded-full text-xs text-stone-300 font-mono">#DNB</span>
+                      <span className="bg-black/20 border border-white/5 px-4 py-2 rounded-full text-xs text-stone-300 font-mono">#JUNGLE</span>
+                      <span className="bg-black/20 border border-white/5 px-4 py-2 rounded-full text-xs text-stone-300 font-mono">#BREAKBEAT</span>
                     </div>
                   </div>
                   
                   <div className="flex flex-col gap-4 shrink-0 w-full md:w-auto relative z-10">
-                    <h3 className="text-xs font-mono uppercase text-stone-500 mb-1 ml-1">Spread Signal</h3>
+                    <h3 className="text-xs font-mono uppercase text-stone-500 mb-1 ml-1">SHARE</h3>
                     <div className="flex gap-2">
                       <button onClick={() => shareStream('twitter')} className="p-4 bg-black/20 border border-white/5 hover:border-moss/50 rounded-full hover:bg-moss hover:text-bark transition-all">
                           <Twitter size={18} />
@@ -166,7 +328,7 @@ export default function App() {
             </div>
         </div>
 
-        {/* Profile Overlay (Full Page) */}
+        {/* Overlays */}
         {currentView === 'profile' && user && (
           <div className="fixed top-0 left-0 bottom-0 right-0 w-full h-full bg-bark/95 backdrop-blur-2xl z-40 overflow-hidden animate-fadeIn pt-20">
             <Profile 
@@ -174,8 +336,30 @@ export default function App() {
               onUpdateUser={handleUpdateUser}
               onClose={() => setCurrentView('stream')}
               onLogout={handleLogout}
+              onOpenShop={() => setCurrentView('shop')}
+              feedItems={feedItems}
             />
           </div>
+        )}
+
+        {currentView === 'shop' && user && (
+            <div className="fixed top-0 left-0 bottom-0 right-0 w-full h-full bg-bark/95 backdrop-blur-2xl z-50 overflow-hidden animate-fadeIn pt-20">
+                <Shop 
+                    user={user}
+                    onPurchase={handlePurchase}
+                    onClose={() => setCurrentView('profile')}
+                />
+            </div>
+        )}
+
+        {currentView === 'admin' && user?.isAdmin && (
+            <div className="fixed top-0 left-0 bottom-0 right-0 w-full h-full bg-bark/95 backdrop-blur-2xl z-50 overflow-hidden animate-fadeIn pt-20">
+                <AdminPanel 
+                    onAddItem={handleAddFeedItem}
+                    onClose={() => setCurrentView('stream')}
+                    items={feedItems}
+                />
+            </div>
         )}
       </main>
 

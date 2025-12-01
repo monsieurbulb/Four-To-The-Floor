@@ -1,100 +1,292 @@
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { User, DEFAULT_STYLE } from '../types';
-import { ArrowRight, Lock } from 'lucide-react';
+import { Loader2, Key, ArrowRight, User as UserIcon, Mail } from 'lucide-react';
+import { Web3Auth } from "@web3auth/modal";
+import { CHAIN_NAMESPACES, WEB3AUTH_NETWORK, WALLET_ADAPTERS } from "@web3auth/base";
+import { EthereumPrivateKeyProvider } from "@web3auth/ethereum-provider";
 
 interface AuthModalProps {
   onLogin: (user: User) => void;
 }
 
+// Client ID for demonstration purposes.
+const CLIENT_ID = "BPi5PB_Ui16knsMEubloBcBPG46cd_kTcs819BBFnQS6gS8P_wuyWwF6gY1i4aapaITz8+x+Lw3Y9cc";
+
+const chainConfig = {
+  chainNamespace: CHAIN_NAMESPACES.EIP155,
+  chainId: "0xaa36a7", // Sepolia Testnet
+  rpcTarget: "https://rpc.ankr.com/eth_sepolia",
+  displayName: "Sepolia Testnet",
+  blockExplorerUrl: "https://sepolia.etherscan.io",
+  ticker: "ETH",
+  tickerName: "Ethereum",
+};
+
 export const AuthModal: React.FC<AuthModalProps> = ({ onLogin }) => {
-  const [isLogin, setIsLogin] = useState(false);
+  const [web3auth, setWeb3auth] = useState<Web3Auth | null>(null);
+  const [ready, setReady] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Form State
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Simulate auth
-    const mockUser: User = {
-      id: Math.random().toString(36).substr(2, 9),
-      username: username || 'Nomad',
-      email: email || 'user@example.com',
-      walletBalance: 0,
-      bio: '',
-      profileStyle: DEFAULT_STYLE,
-      following: [],
-      subscribedEventIds: [],
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+
+    const init = async () => {
+      try {
+        const privateKeyProvider = new EthereumPrivateKeyProvider({ config: { chainConfig } });
+
+        const web3authInstance = new Web3Auth({
+          clientId: CLIENT_ID,
+          web3AuthNetwork: WEB3AUTH_NETWORK.TESTNET,
+          privateKeyProvider,
+          uiConfig: {
+            appName: "Four To The Floor",
+            mode: "dark",
+            theme: {
+              primary: "#2dd4bf", 
+            },
+            defaultLanguage: "en",
+          }
+        });
+
+        const openloginAdapterConfig = {
+            [WALLET_ADAPTERS.OPENLOGIN]: {
+                label: "Social Login",
+                loginMethods: {
+                    google: { name: "Google", showOnModal: true },
+                    facebook: { name: "Facebook", showOnModal: false },
+                },
+            },
+            [WALLET_ADAPTERS.WALLET_CONNECT_V2]: {
+                showOnModal: true,
+                label: "WalletConnect" 
+            },
+            [WALLET_ADAPTERS.METAMASK]: {
+                showOnModal: true,
+                label: "Talisman / Metamask" 
+            }
+        };
+
+        setWeb3auth(web3authInstance);
+        await web3authInstance.initModal({
+             modalConfig: openloginAdapterConfig as any
+        });
+        setReady(true);
+
+        // Auto-login if session exists
+        if (web3authInstance.connected) {
+          await getUserInfo(web3authInstance);
+        }
+      } catch (error: any) {
+        console.warn("Web3Auth Init Warning:", error);
+        setReady(true); // Allow fallback
+      }
     };
-    onLogin(mockUser);
+
+    init();
+
+    // Fallback timer
+    timer = setTimeout(() => {
+        if (!ready) {
+            setReady(true);
+        }
+    }, 4000);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  const getUserInfo = async (web3authInstance: Web3Auth) => {
+    try {
+      const userInfo = await web3authInstance.getUserInfo();
+      
+      let address = "";
+      if (web3authInstance.provider) {
+        const accounts = await web3authInstance.provider.request({ 
+          method: "eth_accounts" 
+        }) as string[];
+        
+        if (accounts && accounts.length > 0) {
+          address = accounts[0];
+        }
+      }
+      
+      // Use form data if available, otherwise fallback to Web3Auth info
+      const finalUsername = username || userInfo.name || "Anonymous";
+      const finalEmail = email || userInfo.email || "";
+      
+      const isAdmin = finalUsername.toLowerCase().includes("admin") || 
+                      finalUsername.toLowerCase().includes("core");
+
+      const user: User = {
+        id: userInfo.verifierId || Date.now().toString(),
+        username: finalUsername,
+        email: finalEmail,
+        walletBalance: 0,
+        points: 0, 
+        walletAddress: address, 
+        bio: `Member since ${new Date().getFullYear()}.`,
+        profileStyle: DEFAULT_STYLE,
+        following: [],
+        subscribedEventIds: [],
+        isAdmin: isAdmin,
+        profileImage: userInfo.profileImage,
+      };
+      
+      onLogin(user);
+    } catch (e) {
+      console.error("Error fetching user info:", e);
+      setError("Failed to retrieve user details.");
+    }
+  };
+
+  const login = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+
+    if (!username || !email) {
+        setError("Please identify yourself.");
+        return;
+    }
+
+    if (!web3auth) {
+      console.log("Using fallback login (Guest)");
+      loginGuest();
+      return;
+    }
+
+    if (!ready) return;
+
+    setLoading(true);
+    try {
+      await web3auth.connect();
+      await getUserInfo(web3auth);
+    } catch (error: any) {
+      console.error("Login Error:", error);
+      if (error?.message?.includes("User closed")) {
+          setLoading(false);
+      } else {
+          loginGuest();
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loginGuest = () => {
+      const guestUser: User = {
+          id: 'guest-' + Date.now(),
+          username: username || 'New Initiate',
+          email: email || 'guest@fttf.local',
+          walletBalance: 0,
+          points: 100,
+          walletAddress: '0x71C7656EC7ab88b098defB751B7401B5f6d8976F',
+          bio: 'Guest account. Simulation mode.',
+          profileStyle: DEFAULT_STYLE,
+          following: [],
+          subscribedEventIds: [],
+          isAdmin: false, 
+      };
+      onLogin(guestUser);
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-bark flex items-center justify-center p-4">
-      {/* Background Ambience */}
-      <div className="absolute inset-0 overflow-hidden">
-         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-moss/20 rounded-full blur-[120px] animate-blob"></div>
-         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-clay/20 rounded-full blur-[120px] animate-blob animation-delay-2000"></div>
-         {/* Subtle Grain */}
-         <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] opacity-10 mix-blend-overlay"></div>
+    <div className="fixed inset-0 z-50 bg-bark flex flex-col items-center justify-center overflow-hidden font-sans">
+      
+      {/* Mystical Background Layers */}
+      <div className="absolute inset-0 z-0">
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[80vw] h-[80vw] bg-moss/5 rounded-full blur-[100px] animate-pulse"></div>
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[40vw] h-[40vw] bg-clay/5 rounded-full blur-[80px] animate-blob"></div>
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,11,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] z-[1] bg-[length:100%_2px,3px_100%] pointer-events-none"></div>
       </div>
 
-      <div className="relative z-10 w-full max-w-md glass-panel p-10 rounded-[40px] shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
-        <div className="text-center mb-8">
-           <h1 className="text-4xl font-bold font-mono tracking-tighter text-sand mb-2 liquid-text">FOUR TO THE FLOOR</h1>
-           <p className="text-sm font-mono text-stone-400 tracking-widest uppercase">
-             <Lock className="inline w-3 h-3 mr-2" />
-             Community Access
-           </p>
+      {/* Main Content */}
+      <div className="relative z-10 flex flex-col items-center justify-center w-full max-w-md px-6">
+        
+        {/* GRAPHIC MOTIF: The Portal */}
+        <div className="mb-8 relative w-32 h-32 flex items-center justify-center">
+           <div className="absolute inset-0 border-[1px] border-moss/30 rounded-full animate-spin-slow"></div>
+           <div className="absolute inset-4 border-[1px] border-transparent border-t-moss/50 border-b-clay/50 rounded-full animate-[spin_8s_linear_infinite_reverse]"></div>
+           <div className="absolute w-2 h-2 bg-sand rounded-full blur-sm animate-pulse"></div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
-          {!isLogin && (
-             <div className="space-y-1">
-               <label className="text-xs font-mono text-moss ml-3">Identity</label>
-               <input 
-                 type="text" 
-                 value={username}
-                 onChange={(e) => setUsername(e.target.value)}
-                 className="w-full bg-black/20 border border-white/5 rounded-2xl p-4 text-sand focus:border-moss focus:outline-none focus:ring-1 focus:ring-moss/50 transition-all font-mono"
-                 placeholder="Choose Alias"
-                 required={!isLogin}
-               />
-             </div>
-          )}
-          
-          <div className="space-y-1">
-            <label className="text-xs font-mono text-moss ml-3">Contact</label>
-            <input 
-              type="email" 
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full bg-black/20 border border-white/5 rounded-2xl p-4 text-sand focus:border-moss focus:outline-none focus:ring-1 focus:ring-moss/50 transition-all font-mono"
-              placeholder="email@address.com"
-              required
-            />
-          </div>
+        {/* Text Heading */}
+        <h2 className="text-2xl md:text-3xl font-bold font-mono tracking-[0.2em] text-transparent bg-clip-text bg-gradient-to-r from-sand via-moss to-sand mb-8 text-center uppercase animate-float">
+           Join The Movement
+        </h2>
 
-          <button 
-            type="submit"
-            className="w-full bg-sand hover:bg-moss text-bark font-bold py-4 rounded-full mt-6 flex items-center justify-center gap-2 transition-all group shadow-lg hover:shadow-moss/20"
-          >
-            <span>{isLogin ? 'RETURN' : 'ENTER'}</span>
-            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-          </button>
+        {/* Login Form */}
+        <form onSubmit={login} className="w-full space-y-4 relative animate-fadeIn">
+            
+            <div className="relative group">
+                <div className="absolute inset-0 bg-gradient-to-r from-moss to-clay opacity-0 group-hover:opacity-20 blur transition-opacity rounded-xl"></div>
+                <div className="relative bg-black/40 border border-white/10 rounded-xl flex items-center px-4 py-3 focus-within:border-moss/50 transition-colors">
+                    <UserIcon size={18} className="text-stone-500 mr-3" />
+                    <input 
+                        type="text" 
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                        placeholder="Create Username"
+                        className="bg-transparent w-full text-sand placeholder-stone-600 outline-none font-mono text-sm tracking-wider"
+                        required
+                    />
+                </div>
+            </div>
+
+            <div className="relative group">
+                <div className="absolute inset-0 bg-gradient-to-r from-moss to-clay opacity-0 group-hover:opacity-20 blur transition-opacity rounded-xl"></div>
+                <div className="relative bg-black/40 border border-white/10 rounded-xl flex items-center px-4 py-3 focus-within:border-moss/50 transition-colors">
+                    <Mail size={18} className="text-stone-500 mr-3" />
+                    <input 
+                        type="email" 
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="Email Address"
+                        className="bg-transparent w-full text-sand placeholder-stone-600 outline-none font-mono text-sm tracking-wider"
+                        required
+                    />
+                </div>
+            </div>
+
+            <button 
+                type="submit"
+                disabled={!ready && !error}
+                className="w-full bg-sand hover:bg-moss text-bark font-bold py-4 rounded-xl mt-6 transition-all duration-300 flex items-center justify-center gap-2 uppercase tracking-widest shadow-lg group hover:scale-[1.02]"
+            >
+                {loading ? (
+                    <Loader2 className="animate-spin" size={20} />
+                ) : (
+                    <>
+                        <span>Initialize</span>
+                        <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                    </>
+                )}
+            </button>
+            
+            {error && (
+                <div className="text-center text-clay text-[10px] font-mono uppercase tracking-widest mt-4">
+                    {error}
+                </div>
+            )}
         </form>
 
-        <div className="mt-8 text-center">
-          <button 
-            onClick={() => setIsLogin(!isLogin)}
-            className="text-xs font-mono text-stone-500 hover:text-sand transition-colors"
-          >
-            {isLogin ? "NEW SOUL? JOIN US" : "RETURNING? LOGIN"}
-          </button>
-        </div>
       </div>
-      
-      <div className="absolute bottom-6 text-center w-full text-[10px] text-stone-600 font-mono">
-        EST. 2024 // EARTH // ORGANIC FREQUENCIES
+
+      <div className="absolute bottom-8 w-full flex justify-between px-8 text-[10px] text-stone-700 font-mono uppercase tracking-widest z-20">
+         <span>Est. 2024 London</span>
+         
+         <button 
+           onClick={loginGuest} 
+           className="opacity-20 hover:opacity-100 hover:text-moss transition-opacity"
+           title="Simulate Access"
+         >
+           <Key size={14} />
+         </button>
       </div>
+
     </div>
   );
 };

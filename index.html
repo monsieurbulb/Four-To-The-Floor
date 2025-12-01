@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -8,12 +9,24 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Ubuntu+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    
+    <!-- POLYFILLS FOR WEB3AUTH -->
+    <script type="module">
+      import { Buffer } from 'https://esm.sh/buffer@6.0.3';
+      import process from 'https://esm.sh/process@0.11.10';
+      
+      window.Buffer = Buffer;
+      window.process = process;
+      window.global = window;
+    </script>
+
     <script>
       tailwind.config = {
         theme: {
           extend: {
             colors: {
-              moss: '#84cc16', // Soft organic green
+              moss: '#2dd4bf', // Aqua Marine / Teal-400 (Renamed logic, kept var name)
               clay: '#d97706', // Earthy orange
               bark: '#1c1917', // Warm black/brown
               sand: '#e7e5e4', // Off-white stone
@@ -29,6 +42,7 @@
               'breathe': 'breathe 4s ease-in-out infinite',
               'spin-slow': 'spin 12s linear infinite',
               'fadeIn': 'fadeIn 0.8s ease-out forwards',
+              'pulse-glow': 'pulseGlow 8s infinite alternate',
             },
             keyframes: {
               blob: {
@@ -48,6 +62,10 @@
               fadeIn: {
                 '0%': { opacity: '0', transform: 'translateY(10px)' },
                 '100%': { opacity: '1', transform: 'translateY(0)' },
+              },
+              pulseGlow: {
+                '0%': { opacity: '0.3', transform: 'scale(1)' },
+                '100%': { opacity: '0.6', transform: 'scale(1.1)' },
               }
             }
           },
@@ -56,13 +74,29 @@
     </script>
     <style>
       body {
-        background-color: #0c0a09; /* Warm dark background */
+        background-color: #0c0a09; /* Warm dark background base */
         color: #e7e5e4;
         overflow-x: hidden;
         font-family: 'Bebas Neue', sans-serif;
         letter-spacing: 0.05em;
       }
       
+      /* Visual Transmission / Hypercolour Overlay */
+      body::before {
+        content: "";
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        /* A hypercolour mix of teal, purple and orange light */
+        background: radial-gradient(circle at 50% 50%, rgba(45, 212, 191, 0.15), rgba(168, 85, 247, 0.1), rgba(217, 119, 6, 0.05), transparent 80%);
+        pointer-events: none;
+        z-index: -1;
+        mix-blend-mode: hard-light;
+        animation: pulse-glow 12s infinite alternate ease-in-out;
+      }
+
       /* Organic Noise Texture Overlay - Softer */
       body::after {
         content: "";
@@ -71,7 +105,7 @@
         left: 0;
         width: 100vw;
         height: 100vh;
-        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.6' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.05'/%3E%3C/svg%3E");
+        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.04'/%3E%3C/svg%3E");
         pointer-events: none;
         z-index: 9999;
         mix-blend-mode: overlay;
@@ -89,21 +123,21 @@
         border-radius: 10px; 
       }
       ::-webkit-scrollbar-thumb:hover {
-        background: #84cc16; 
+        background: #2dd4bf; 
       }
       
       .liquid-text {
-        background: linear-gradient(to right, #84cc16, #d97706);
+        background: linear-gradient(to right, #2dd4bf, #d97706);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
       }
       
       /* Glassmorphism Utilities */
       .glass-panel {
-        background: rgba(28, 25, 23, 0.4);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        border: 1px solid rgba(255, 255, 255, 0.05);
+        background: rgba(12, 10, 9, 0.6); /* Slightly darker for better contrast against busy background */
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(255, 255, 255, 0.08);
       }
     </style>
   <script type="importmap">
@@ -112,7 +146,14 @@
     "react": "https://aistudiocdn.com/react@^19.2.0",
     "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
     "react/": "https://aistudiocdn.com/react@^19.2.0/",
-    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0"
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0",
+    "@web3auth/modal": "https://esm.sh/@web3auth/modal@8.12.4?bundle",
+    "@web3auth/base": "https://esm.sh/@web3auth/base@8.12.4?bundle",
+    "@web3auth/ethereum-provider": "https://esm.sh/@web3auth/ethereum-provider@8.12.4?bundle",
+    "events": "https://esm.sh/events@3.3.0",
+    "stream": "https://esm.sh/stream-browserify@3.0.0",
+    "buffer": "https://esm.sh/buffer@6.0.3?bundle",
+    "process": "https://esm.sh/process@0.11.10?bundle"
   }
 }
 </script>

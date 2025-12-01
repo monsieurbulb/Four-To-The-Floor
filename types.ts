@@ -1,12 +1,44 @@
+
 export interface User {
   id: string;
   username: string;
   email: string;
   walletBalance: number;
+  points: number; // Loyalty points
+  walletAddress?: string;
   bio: string;
   profileStyle: ProfileStyle;
-  following: string[]; // IDs of users followed
-  subscribedEventIds: string[]; // IDs of events subscribed to
+  following: string[];
+  subscribedEventIds: string[];
+  isAdmin: boolean;
+  profileImage?: string;
+  contacts?: Contact[];
+  assets?: Asset[]; // Inventory (Emojis, etc)
+}
+
+export interface Asset {
+  id: string;
+  type: 'emoji' | 'badge' | 'ticket';
+  name: string;
+  icon: string; // The emoji char or image URL
+  quantity: number;
+}
+
+export interface Product {
+  id: string;
+  name: string;
+  description: string;
+  priceCash?: number;
+  pricePoints?: number;
+  image: string;
+  assets: Asset[]; // What you get when you buy it
+}
+
+export interface Contact {
+  id: string;
+  name: string;
+  walletAddress: string;
+  avatar?: string;
 }
 
 export interface ProfileStyle {
@@ -14,17 +46,8 @@ export interface ProfileStyle {
   textColor: string;
   accentColor: string;
   backgroundImage: string;
-  borderRadius: string; // For that fluid blob look
+  borderRadius: string;
   fontFamily: string;
-}
-
-export interface Project {
-  id: string;
-  title: string;
-  description: string;
-  coverImage: string;
-  status: 'Funding' | 'Completed';
-  contributionAmount?: number;
 }
 
 export interface Purchase {
@@ -33,6 +56,7 @@ export interface Purchase {
   price: number;
   date: string;
   image: string;
+  lineup: string[];
 }
 
 export interface Event {
@@ -49,16 +73,17 @@ export interface FeedItem {
   id: string;
   type: 'video' | 'audio' | 'text' | 'image';
   title: string;
-  content: string; // URL for media, or text body
+  content: string;
   thumbnail?: string;
   date: string;
-  series: string; // e.g., "Series 1", "Series 2"
+  series: string;
+  livepeerPlaybackId?: string;
 }
 
 export const DEFAULT_STYLE: ProfileStyle = {
-  backgroundColor: '#1c1917', // Bark/Warm Black
-  textColor: '#e7e5e4', // Sand
-  accentColor: '#84cc16', // Moss
+  backgroundColor: '#1c1917',
+  textColor: '#e7e5e4',
+  accentColor: '#2dd4bf',
   backgroundImage: '',
   borderRadius: '24px',
   fontFamily: 'Bebas Neue',
